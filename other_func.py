@@ -4,15 +4,14 @@
 @author: Dongyu Zhang
 """
 import os
-import time
 import re
-import io
-import torch
+import time
 import numpy as np
 import pandas as pd
-from tqdm import trange, tqdm
+import torch
 from sklearn.metrics import roc_curve, precision_recall_curve, \
     auc, matthews_corrcoef, accuracy_score, precision_score, recall_score, f1_score
+from tqdm import tqdm
 from utils import pad_sequences
 
 
@@ -119,7 +118,7 @@ def Tokenize(df, max_length, tokenizer):
         input_ids = [tokenizer.convert_tokens_to_ids(x) for x in tokenized_texts]
     else:
         assert 'Input_ID' in df.columns
-        input_ids = df.Input_ID.apply(lambda x: x.split(' '))
+        input_ids = df.Input_ID.apply(lambda x: x[1:-1].split(', '))
         input_ids = input_ids.apply(lambda x: [int(i) for i in x])
         input_ids = input_ids.values
     input_ids = pad_sequences(input_ids, maxlen=max_length, dtype="long", truncating="post", padding="post")
@@ -143,7 +142,7 @@ def Tokenize_with_note_id(df, max_length, tokenizer):
         input_ids = [tokenizer.convert_tokens_to_ids(x) for x in tokenized_texts]
     else:
         assert 'Input_ID' in df.columns
-        input_ids = df.Input_ID.apply(lambda x: x.split(' '))
+        input_ids = df.Input_ID.apply(lambda x: x[1:-1].split(', '))
         input_ids = input_ids.apply(lambda x: [int(i) for i in x])
         input_ids = input_ids.values
     input_ids = pad_sequences(input_ids, maxlen=max_length, dtype="long", truncating="post", padding="post")
@@ -197,7 +196,7 @@ def Tokenize_with_note_id_hour(df, max_length, tokenizer):
         input_ids = [tokenizer.convert_tokens_to_ids(x) for x in tokenized_texts]
     else:
         assert 'Input_ID' in df.columns
-        input_ids = df.Input_ID.apply(lambda x: x.split(' '))
+        input_ids = df.Input_ID.apply(lambda x: x[1:-1].split(', '))
         input_ids = input_ids.apply(lambda x: [int(i) for i in x])
         input_ids = input_ids.values
     input_ids = pad_sequences(input_ids, maxlen=max_length, dtype="long", truncating="post", padding="post")
