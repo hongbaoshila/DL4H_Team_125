@@ -4,26 +4,21 @@
 @author: Dongyu Zhang
 """
 
-import time
-import os
-import torch
-import random
 import argparse
-from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import matthews_corrcoef, accuracy_score, precision_score, recall_score, f1_score
-from sklearn.metrics import roc_auc_score, precision_recall_curve, roc_curve, auc, confusion_matrix, \
-    classification_report
-from pytorch_transformers import BertTokenizer, BertConfig
-from pytorch_transformers import AdamW, BertForSequenceClassification, WarmupLinearSchedule
-from pytorch_pretrained_bert.optimization import BertAdam
-from tqdm import tqdm, trange
-import pandas as pd
-import io
-import numpy as np
-from dotmap import DotMap
+import os
+import random
+import time
 import matplotlib.pyplot as plt
-from other_func import write_log, Tokenize_with_note_id, concat_by_id_list_with_note_chunk_id, flat_accuracy, model_auc, \
+import numpy as np
+import pandas as pd
+import torch
+torch.cuda.empty_cache()
+from dotmap import DotMap
+from pytorch_pretrained_bert.optimization import BertAdam
+from pytorch_transformers import BertForSequenceClassification
+from pytorch_transformers import BertTokenizer
+from tqdm import trange
+from other_func import write_log, Tokenize_with_note_id, concat_by_id_list_with_note_chunk_id, flat_accuracy, \
     write_performance
 from utils import mask_batch_generator
 
@@ -51,82 +46,83 @@ def main():
     parser = argparse.ArgumentParser()
     ## Required parameters
     parser.add_argument("--data_dir",
-                        default=None,
+                        default='./Ecoli',
                         type=str,
-                        required=True,
+                        required=False,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
 
     parser.add_argument("--train_data",
-                        default=None,
+                        default='train.csv',
                         type=str,
-                        required=True,
+                        required=False,
                         help="The input training data file name."
                              " Should be the .tsv file (or other data file) for the task.")
 
     parser.add_argument("--val_data",
-                        default=None,
+                        default='val.csv',
                         type=str,
-                        required=True,
+                        required=False,
                         help="The input validation data file name."
                              " Should be the .tsv file (or other data file) for the task.")
 
     parser.add_argument("--test_data",
-                        default=None,
+                        default='test.csv',
                         type=str,
-                        required=True,
+                        required=False,
                         help="The input test data file name."
                              " Should be the .tsv file (or other data file) for the task.")
 
     parser.add_argument("--log_path",
-                        default=None,
+                        default='./log.txt',
                         type=str,
-                        required=True,
+                        required=False,
                         help="The log file path.")
 
     parser.add_argument("--output_dir",
-                        default=None,
+                        default='./exp_FTL-Trans',
                         type=str,
-                        required=True,
+                        required=False,
                         help="The output directory where the model checkpoints will be written.")
 
     parser.add_argument("--save_model",
-                        default=False,
+                        default=True,
                         action='store_true',
                         help="Whether to save the model.")
 
     parser.add_argument("--bert_model",
                         default="bert-base-uncased",
                         type=str,
-                        required=True,
+                        required=False,
                         help="Bert pre-trained model selected in the list: bert-base-uncased, "
                              "bert-large-uncased, bert-base-cased, bert-base-multilingual, bert-base-chinese.")
 
     parser.add_argument("--embed_mode",
-                        default=None,
+                        default='all',
                         type=str,
-                        required=True,
+                        required=False,
                         help="The embedding type selected in the list: all, note, chunk, no.")
 
     parser.add_argument("--c",
+                        default=0.1,
                         type=float,
-                        required=True,
+                        required=False,
                         help="The parameter c for scaled adjusted mean method")
 
     parser.add_argument("--task_name",
-                        default="BERT_mortality_am",
+                        default="BERT_ecoli_am",
                         type=str,
-                        required=True,
+                        required=False,
                         help="The name of the task.")
 
     ## Other parameters
     parser.add_argument("--max_seq_length",
-                        default=128,
+                        default=64,
                         type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. \n"
                              "Sequences longer than this will be truncated, and sequences shorter \n"
                              "than this will be padded.")
     parser.add_argument("--max_chunk_num",
-                        default=64,
+                        default=32,
                         type=int,
                         help="The maximum total input chunk numbers after WordPiece tokenization.")
     parser.add_argument("--train_batch_size",
@@ -138,11 +134,11 @@ def main():
                         type=int,
                         help="Total batch size for eval.")
     parser.add_argument("--learning_rate",
-                        default=2e-5,
+                        default=1e-7,
                         type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--warmup_proportion",
-                        default=0.0,
+                        default=0.1,
                         type=float,
                         help="Proportion of training to perform linear learning rate warmup for. "
                              "E.g., 0.1 = 10%% of training.")
@@ -322,7 +318,7 @@ def main():
                 b_input_mask = b_input_mask.to(device)
                 b_labels = b_labels.repeat(b_input_ids.shape[0]).to(device)
                 # Forward pass
-                outputs = model(b_input_ids, token_type_ids=None, attention_mask=b_input_mask, labels=b_labels)
+                outputs = model(b_input_ids.long(), token_type_ids=None, attention_mask=b_input_mask, labels=b_labels.long())
                 loss, logits = outputs[:2]
                 if n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu.
@@ -360,7 +356,7 @@ def main():
                     b_input_ids = b_input_ids.to(device)
                     b_input_mask = b_input_mask.to(device)
                     b_labels = b_labels.repeat(b_input_ids.shape[0])
-                    outputs = model(b_input_ids, token_type_ids=None, attention_mask=b_input_mask)
+                    outputs = model(b_input_ids.long(), token_type_ids=None, attention_mask=b_input_mask.long())
                     # Move logits and labels to CPU
                     logits = outputs[-1]
                     logits = m(logits).detach().cpu().numpy()[:, 1]
@@ -437,7 +433,7 @@ def main():
         # Telling the model not to compute or store gradients, saving memory and speeding up prediction
         with torch.no_grad():
             # Forward pass, calculate logit predictions
-            outputs = model(b_input_ids, token_type_ids=None, attention_mask=b_input_mask)
+            outputs = model(b_input_ids.long(), token_type_ids=None, attention_mask=b_input_mask.long())
 
         # Move logits and labels to CPU
         logits = outputs[-1]
